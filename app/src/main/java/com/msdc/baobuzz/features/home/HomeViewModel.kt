@@ -14,7 +14,6 @@ import com.msdc.baobuzz.core.models.UpcomingFixture
 import com.msdc.baobuzz.interfaces.FootballApi
 import com.msdc.baobuzz.models.Fixture as ApiFixture
 import com.msdc.baobuzz.models.League
-import com.msdc.baobuzz.models.Team
 import com.msdc.baobuzz.repository.UserPreferencesRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
@@ -142,7 +141,7 @@ constructor(
                         season = league.season,
                         from = from,
                         to = to
-                    ).response.orEmpty()
+                    ).response
                 }.getOrDefault(emptyList())
             }
         }.awaitAll().flatten()
@@ -173,8 +172,8 @@ constructor(
 
 private fun ApiFixture.toUpcomingFixture(): UpcomingFixture = UpcomingFixture(
     id = fixture.id.toString(),
-    homeTeam = teams.home.toDomainTeam(),
-    awayTeam = teams.away.toDomainTeam(),
+    homeTeam = teams.home,
+    awayTeam = teams.away,
     dateTime = fixture.date,
     venue = fixture.venue.name,
     round = league.round,
@@ -184,24 +183,14 @@ private fun ApiFixture.toUpcomingFixture(): UpcomingFixture = UpcomingFixture(
 
 private fun ApiFixture.toRecentResult(): RecentResult = RecentResult(
     id = fixture.id.toString(),
-    homeTeam = teams.home.toDomainTeam(),
-    awayTeam = teams.away.toDomainTeam(),
+    homeTeam = teams.home,
+    awayTeam = teams.away,
     homeScore = goals.home ?: 0,
     awayScore = goals.away ?: 0,
     date = fixture.date,
     round = league.round,
     leagueId = league.id,
     leagueName = league.name
-)
-
-private fun com.msdc.baobuzz.models.Team.toDomainTeam(): Team = Team(
-    id = id,
-    name = name,
-    code = code,
-    country = country,
-    founded = founded,
-    national = national,
-    logo = logo
 )
 
 private fun List<LiveMatch>.favoriteLiveMatchesFirst(favoriteTeamIds: Set<Int>): List<LiveMatch> =
