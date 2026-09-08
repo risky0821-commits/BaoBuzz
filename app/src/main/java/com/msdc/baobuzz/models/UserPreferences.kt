@@ -6,5 +6,6 @@ data class UserPreferences(
     val teamNotifications: Map<Int, Boolean> = emptyMap(),
     val isOnboardingCompleted: Boolean = false,
     val preferredLanguage: String = "en",
-    val notificationsEnabled: Boolean = true
+    val notificationsEnabled: Boolean = true,
+    val followedMatchIds: Set<String> = emptySet()
 )
