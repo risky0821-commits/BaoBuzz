@@ -204,8 +204,22 @@ private fun MatchFeed(
 ) {
     val today = LocalDate.now(RiyadhZone)
     val live = if (selectedDate == today) state.liveMatches else emptyList()
-    val upcoming = state.upcomingFixtures.filter { matchDate(it.dateTime) == selectedDate }
+    val dayUpcoming = state.upcomingFixtures.filter { matchDate(it.dateTime) == selectedDate }
     val results = state.recentResults.filter { matchDate(it.date) == selectedDate }
+
+    // If today has no fixtures, don't leave the user with an empty screen.
+    val nearestUpcoming = if (
+        selectedDate == today && live.isEmpty() && dayUpcoming.isEmpty() && results.isEmpty()
+    ) {
+        state.upcomingFixtures
+            .filter { (matchDate(it.dateTime) ?: today).isAfter(today) }
+            .sortedBy { it.dateTime }
+            .take(8)
+    } else {
+        emptyList()
+    }
+
+    val upcoming = if (nearestUpcoming.isNotEmpty()) nearestUpcoming else dayUpcoming
 
     val followedLive = live.filter { it.id in followedMatchIds || isAlAhli(it.homeTeam, it.awayTeam) }
     val followedUpcoming = upcoming.filter { it.id in followedMatchIds || isAlAhli(it.homeTeam, it.awayTeam) }
@@ -222,6 +236,17 @@ private fun MatchFeed(
         contentPadding = PaddingValues(horizontal = 15.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (nearestUpcoming.isNotEmpty()) {
+            item(key = "nearest-title") {
+                Text(
+                    text = "لا توجد مباريات اليوم — هذه أقرب المباريات القادمة",
+                    color = Muted,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
         if (followedLive.isNotEmpty() || followedUpcoming.isNotEmpty() || followedResults.isNotEmpty()) {
             item(key = "follow-card") {
                 CompetitionCard(
@@ -231,7 +256,8 @@ private fun MatchFeed(
                     results = followedResults,
                     followedMatchIds = followedMatchIds,
                     onToggleFollow = onToggleFollow,
-                    showStar = true
+                    showStar = true,
+                    showDate = nearestUpcoming.isNotEmpty()
                 )
             }
         }
@@ -243,7 +269,8 @@ private fun MatchFeed(
                 upcoming = upcoming.filter { it.leagueId == leagueId },
                 results = results.filter { it.leagueId == leagueId },
                 followedMatchIds = followedMatchIds,
-                onToggleFollow = onToggleFollow
+                onToggleFollow = onToggleFollow,
+                showDate = nearestUpcoming.isNotEmpty()
             )
         }
 
@@ -268,7 +295,8 @@ private fun CompetitionCard(
     results: List<RecentResult> = emptyList(),
     followedMatchIds: Set<String>,
     onToggleFollow: (String) -> Unit,
-    showStar: Boolean = false
+    showStar: Boolean = false,
+    showDate: Boolean = false
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -304,7 +332,7 @@ private fun CompetitionCard(
                     matchId = match.id,
                     home = match.homeTeam,
                     away = match.awayTeam,
-                    middle = match.minute?.let { "$it'" } ?: match.status,
+                    middle = match.minute?.let { "$it'" } ?: arabicStatus(match.status),
                     homeScore = match.homeScore,
                     awayScore = match.awayScore,
                     isFollowed = match.id in followedMatchIds || isAlAhli(match.homeTeam, match.awayTeam),
@@ -313,11 +341,16 @@ private fun CompetitionCard(
             }
 
             upcoming.forEach { fixture ->
+                val timeLabel = if (showDate) {
+                    "${formatArabicDate(fixture.dateTime)} • ${formatRiyadhTime(fixture.dateTime)}"
+                } else {
+                    formatRiyadhTime(fixture.dateTime)
+                }
                 MatchLine(
                     matchId = fixture.id,
                     home = fixture.homeTeam,
                     away = fixture.awayTeam,
-                    middle = formatRiyadhTime(fixture.dateTime),
+                    middle = timeLabel,
                     isFollowed = fixture.id in followedMatchIds || isAlAhli(fixture.homeTeam, fixture.awayTeam),
                     onToggleFollow = onToggleFollow
                 )
@@ -380,7 +413,6 @@ private fun MatchLine(
             .combinedClickable(
                 onClick = { },
                 onLongClick = {
-                    // Al-Ahli is followed automatically, so no redundant action is shown.
                     if (!isAlAhliMatch) showFollowDialog = true
                 }
             )
@@ -402,7 +434,7 @@ private fun MatchLine(
         TeamMini(home, Modifier.weight(1f))
 
         Column(
-            modifier = Modifier.width(76.dp),
+            modifier = Modifier.width(110.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (homeScore != null || awayScore != null) {
@@ -416,9 +448,9 @@ private fun MatchLine(
                 Text(
                     text = middle,
                     color = Muted,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1
+                    maxLines = 2
                 )
             }
         }
@@ -429,6 +461,7 @@ private fun MatchLine(
 
 @Composable
 private fun TeamMini(team: Team, modifier: Modifier = Modifier, reverse: Boolean = false) {
+    val displayName = arabicTeamName(team.name)
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
@@ -436,7 +469,7 @@ private fun TeamMini(team: Team, modifier: Modifier = Modifier, reverse: Boolean
     ) {
         if (!reverse) {
             Text(
-                team.name,
+                displayName,
                 color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -447,14 +480,14 @@ private fun TeamMini(team: Team, modifier: Modifier = Modifier, reverse: Boolean
 
         AsyncImage(
             model = team.logo,
-            contentDescription = team.name,
+            contentDescription = displayName,
             modifier = Modifier.size(34.dp)
         )
 
         if (reverse) {
             Spacer(Modifier.width(8.dp))
             Text(
-                team.name,
+                displayName,
                 color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -473,13 +506,43 @@ private fun leagueTitle(leagueId: Int, state: HomeUiState.Success): String =
         ?: "المباريات"
 
 private fun arabicLeagueName(name: String): String = when (name.lowercase()) {
-    "saudi pro league", "pro league" -> "دوري روشن السعودي"
-    "premier league" -> "الدوري الإنجليزي"
-    "la liga" -> "الدوري الإسباني"
-    "bundesliga" -> "الدوري الألماني"
-    "serie a" -> "الدوري الإيطالي"
-    "ligue 1" -> "الدوري الفرنسي"
+    "saudi pro league", "pro league", "دوري روشن السعودي" -> "دوري روشن السعودي"
+    "uefa champions league", "دوري أبطال أوروبا" -> "دوري أبطال أوروبا"
+    "premier league", "الدوري الإنجليزي" -> "الدوري الإنجليزي"
+    "la liga", "الدوري الإسباني" -> "الدوري الإسباني"
+    "bundesliga", "الدوري الألماني" -> "الدوري الألماني"
+    "serie a", "الدوري الإيطالي" -> "الدوري الإيطالي"
+    "ligue 1", "الدوري الفرنسي" -> "الدوري الفرنسي"
     else -> name
+}
+
+private fun arabicTeamName(name: String): String = when (name.trim().lowercase()) {
+    "al-ahli jeddah", "al ahli jeddah", "al-ahli saudi fc", "al ahli saudi fc" -> "الأهلي"
+    "al-hilal saudi fc", "al hilal", "al-hilal" -> "الهلال"
+    "al-nassr", "al nassr" -> "النصر"
+    "al-ittihad fc", "al ittihad", "al-ittihad" -> "الاتحاد"
+    "al-qadsiah fc", "al qadsiah", "al-qadisiyah" -> "القادسية"
+    "al-shabab", "al shabab" -> "الشباب"
+    "al-ettifaq", "al ettifaq" -> "الاتفاق"
+    "al-taawoun", "al taawoun" -> "التعاون"
+    "al-fateh", "al fateh" -> "الفتح"
+    "al-fayha", "al fayha" -> "الفيحاء"
+    "al-khaleej saiht", "al-khaleej saihat", "al khaleej saihat" -> "الخليج"
+    "al-riyadh", "al riyadh" -> "الرياض"
+    "damac", "damac fc" -> "ضمك"
+    "al-kholood", "al kholood" -> "الخلود"
+    "neom", "neom sc" -> "نيوم"
+    else -> name
+}
+
+private fun arabicStatus(status: String): String = when (status.lowercase()) {
+    "first half" -> "الشوط الأول"
+    "halftime" -> "بين الشوطين"
+    "second half" -> "الشوط الثاني"
+    "finished" -> "النهاية"
+    "not started" -> "لم تبدأ"
+    "postponed" -> "مؤجلة"
+    else -> status
 }
 
 private fun matchDate(raw: String): LocalDate? =
@@ -497,6 +560,11 @@ private fun formatRiyadhTime(raw: String): String =
             Instant.parse(raw).atZone(RiyadhZone).format(DateTimeFormatter.ofPattern("HH:mm"))
         }.getOrElse { raw.take(5) }
     }
+
+private fun formatArabicDate(raw: String): String {
+    val date = matchDate(raw) ?: return ""
+    return date.format(DateTimeFormatter.ofPattern("EEE d MMM", Locale("ar")))
+}
 
 @Composable
 private fun SimpleMessage(text: String, actionText: String, onAction: () -> Unit) {
