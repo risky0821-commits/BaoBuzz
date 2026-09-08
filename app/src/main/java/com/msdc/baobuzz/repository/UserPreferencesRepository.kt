@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.msdc.baobuzz.core.data.PersonalFootballDefaults
 import com.msdc.baobuzz.models.UserPreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -42,28 +43,26 @@ class UserPreferencesRepository @Inject constructor(private val dataStore: DataS
         dataStore.data.map { prefs ->
             UserPreferences(
                 selectedLeagueIds =
-                    prefs[SELECTED_LEAGUES]?.split(",")?.mapNotNull {
-                        if (it.isBlank()) null else it.toIntOrNull()
-                    }
-                        ?: emptyList(),
+                    prefs[SELECTED_LEAGUES]
+                        ?.split(",")
+                        ?.mapNotNull { if (it.isBlank()) null else it.toIntOrNull() }
+                        ?: listOf(PersonalFootballDefaults.SAUDI_PRO_LEAGUE_ID),
                 selectedTeamIds =
-                    prefs[SELECTED_TEAMS]?.split(",")?.mapNotNull {
-                        if (it.isBlank()) null else it.toIntOrNull()
-                    }
-                        ?: emptyList(),
+                    prefs[SELECTED_TEAMS]
+                        ?.split(",")
+                        ?.mapNotNull { if (it.isBlank()) null else it.toIntOrNull() }
+                        ?: listOf(PersonalFootballDefaults.AL_AHLI_JEDDAH_TEAM_ID),
                 teamNotifications =
                     prefs[TEAM_NOTIFICATIONS]
                         ?.split(",")
-                        ?.associate {
-                            val parts = it.split(":")
-                            if (parts.size == 2) {
-                                parts[0].toInt() to parts[1].toBoolean()
-                            } else {
-                                0 to false
-                            }
+                        ?.mapNotNull { entry ->
+                            val parts = entry.split(":")
+                            if (parts.size != 2) return@mapNotNull null
+                            val teamId = parts[0].toIntOrNull() ?: return@mapNotNull null
+                            teamId to parts[1].toBoolean()
                         }
-                        ?.filterKeys { it != 0 }
-                        ?: emptyMap(),
+                        ?.toMap()
+                        ?: mapOf(PersonalFootballDefaults.AL_AHLI_JEDDAH_TEAM_ID to true),
                 isOnboardingCompleted = prefs[ONBOARDING_COMPLETED] ?: false,
                 preferredLanguage = prefs[PREFERRED_LANGUAGE] ?: "en",
                 notificationsEnabled = prefs[NOTIFICATIONS_ENABLED] ?: true
