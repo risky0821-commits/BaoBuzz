@@ -143,7 +143,7 @@ constructor(
                     _uiState.value =
                         HomeUiState.Success(
                             liveMatches =
-                                liveMatchesDeferred.await().favoriteTeamFirst(favoriteTeamIds),
+                                liveMatchesDeferred.await().favoriteLiveMatchesFirst(favoriteTeamIds),
                             recentTransfers = recentTransfersDeferred.await(),
                             leagueStandings = leagueStandingsDeferred.await(),
                             selectedLeagues =
@@ -151,9 +151,9 @@ constructor(
                                     LeagueData.getLeagueById(leagueId)
                                 },
                             upcomingFixtures =
-                                upcomingFixturesDeferred.await().favoriteTeamFirst(favoriteTeamIds),
+                                upcomingFixturesDeferred.await().favoriteUpcomingFixturesFirst(favoriteTeamIds),
                             recentResults =
-                                recentResultsDeferred.await().favoriteTeamFirst(favoriteTeamIds),
+                                recentResultsDeferred.await().favoriteRecentResultsFirst(favoriteTeamIds),
                             leagueInsights = leagueInsightsDeferred.await(),
                             topScorers = topScorersDeferred.await()
                         )
@@ -181,19 +181,21 @@ constructor(
     }
 }
 
-private fun List<LiveMatch>.favoriteTeamFirst(favoriteTeamIds: Set<Int>): List<LiveMatch> =
+private fun List<LiveMatch>.favoriteLiveMatchesFirst(
+    favoriteTeamIds: Set<Int>
+): List<LiveMatch> =
     sortedByDescending { match ->
         match.homeTeam.id in favoriteTeamIds || match.awayTeam.id in favoriteTeamIds
     }
 
-private fun List<UpcomingFixture>.favoriteTeamFirst(
+private fun List<UpcomingFixture>.favoriteUpcomingFixturesFirst(
     favoriteTeamIds: Set<Int>
 ): List<UpcomingFixture> =
     sortedByDescending { fixture ->
         fixture.homeTeam.id in favoriteTeamIds || fixture.awayTeam.id in favoriteTeamIds
     }
 
-private fun List<RecentResult>.favoriteTeamFirst(
+private fun List<RecentResult>.favoriteRecentResultsFirst(
     favoriteTeamIds: Set<Int>
 ): List<RecentResult> =
     sortedByDescending { result ->
