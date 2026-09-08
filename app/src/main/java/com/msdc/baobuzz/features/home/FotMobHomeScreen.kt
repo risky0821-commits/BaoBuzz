@@ -1,8 +1,11 @@
 package com.msdc.baobuzz.features.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,14 +20,19 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -34,12 +42,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.msdc.baobuzz.core.models.LiveMatch
 import com.msdc.baobuzz.core.models.RecentResult
 import com.msdc.baobuzz.core.models.UpcomingFixture
+import com.msdc.baobuzz.models.Team
+
+private val AppBlack = Color(0xFF050505)
+private val TopBarBlack = Color(0xFF171717)
+private val LeagueHeader = Color(0xFF2A2A2A)
+private val LeagueBody = Color(0xFF1D1D1D)
+private val AccentGreen = Color(0xFF66E47B)
+private val Muted = Color(0xFFA9A9A9)
+private const val AL_AHLI_ID = 2929
 
 @Composable
 fun FotMobHomeScreen(
@@ -52,181 +70,358 @@ fun FotMobHomeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(AppBlack)
     ) {
-        FotMobTopBar(
-            onRefresh = viewModel::refreshData,
-            onSettings = onNavigateToSettings
-        )
+        FotMobTopBar(onSettings = onNavigateToSettings)
         DateStrip()
 
         when (val state = uiState) {
-            is HomeUiState.Loading -> {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            }
-            is HomeUiState.OnboardingRequired -> {
-                SimpleMessage("اختر دورياتك للبدء", "فتح الإعدادات", onNavigateToOnboarding)
-            }
-            is HomeUiState.NoLeaguesSelected -> {
-                SimpleMessage("لا توجد دوريات مختارة", "الإعدادات", onNavigateToSettings)
-            }
-            is HomeUiState.Error -> {
-                SimpleMessage(state.message, "إعادة المحاولة") { viewModel.retry() }
-            }
+            is HomeUiState.Loading -> LoadingState()
+            is HomeUiState.OnboardingRequired -> SimpleMessage("اختر بطولاتك للبدء", "فتح الإعدادات", onNavigateToOnboarding)
+            is HomeUiState.NoLeaguesSelected -> SimpleMessage("لا توجد بطولات مختارة", "الإعدادات", onNavigateToSettings)
+            is HomeUiState.Error -> SimpleMessage(state.message, "إعادة المحاولة") { viewModel.retry() }
             is HomeUiState.Success -> MatchFeed(state)
         }
     }
 }
 
 @Composable
-private fun FotMobTopBar(onRefresh: () -> Unit, onSettings: () -> Unit) {
+private fun FotMobTopBar(onSettings: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .background(TopBarBlack)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "المباريات",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.weight(1f)
-        )
-        IconButton(onClick = onRefresh) {
-            Icon(Icons.Default.Refresh, contentDescription = "تحديث")
-        }
         IconButton(onClick = onSettings) {
-            Icon(Icons.Default.Settings, contentDescription = "الإعدادات")
+            Icon(Icons.Default.MoreVert, contentDescription = "المزيد", tint = Color.White)
         }
+        IconButton(onClick = {}) {
+            Icon(Icons.Default.Search, contentDescription = "بحث", tint = Color.White)
+        }
+        IconButton(onClick = {}) {
+            Icon(Icons.Default.CalendarMonth, contentDescription = "التقويم", tint = Color.White)
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        Surface(
+            color = Color(0xFF3A3A3A),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                Text("مباشر", color = Color.White, fontWeight = FontWeight.SemiBold)
+                Box(Modifier.size(17.dp).background(Color(0xFF8C8C8C), CircleShape))
+            }
+        }
+
+        Spacer(Modifier.width(18.dp))
+
+        Text(
+            text = "SCORES",
+            color = Color.White,
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Black
+        )
     }
 }
 
 @Composable
 private fun DateStrip() {
-    val days = listOf("السبت" to "5", "الأحد" to "6", "الإثنين" to "7", "اليوم" to "8", "الأربعاء" to "9", "الخميس" to "10", "الجمعة" to "11")
+    val days = listOf(
+        "الأحد 06 سبتمبر",
+        "أمس",
+        "اليوم",
+        "غداً",
+        "الخميس 10 سبتمبر"
+    )
+
     LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(TopBarBlack),
+        contentPadding = PaddingValues(horizontal = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(22.dp)
     ) {
-        items(days) { (name, number) ->
-            val selected = name == "اليوم"
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-                ),
-                shape = RoundedCornerShape(12.dp)
+        items(days) { label ->
+            val selected = label == "اليوم"
+            Column(
+                modifier = Modifier.padding(vertical = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(name, style = MaterialTheme.typography.labelMedium, color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(number, fontWeight = FontWeight.Bold, color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
-                }
+                Text(
+                    text = label,
+                    color = if (selected) Color.White else Muted,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1
+                )
+                Spacer(Modifier.height(8.dp))
+                Box(
+                    Modifier
+                        .width(50.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (selected) AccentGreen else Color.Transparent)
+                )
             }
         }
     }
-    Spacer(Modifier.height(12.dp))
+}
+
+@Composable
+private fun LoadingState() {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(color = AccentGreen)
+    }
 }
 
 @Composable
 private fun MatchFeed(state: HomeUiState.Success) {
+    val favoriteUpcoming = state.upcomingFixtures.firstOrNull { it.homeTeam.id == AL_AHLI_ID || it.awayTeam.id == AL_AHLI_ID }
+    val favoriteLive = state.liveMatches.firstOrNull { it.homeTeam.id == AL_AHLI_ID || it.awayTeam.id == AL_AHLI_ID }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(horizontal = 15.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        if (favoriteLive != null || favoriteUpcoming != null) {
+            item {
+                FollowCard(live = favoriteLive, upcoming = favoriteUpcoming)
+            }
+        }
+
         if (state.liveMatches.isNotEmpty()) {
-            item { SectionTitle("مباشر الآن") }
-            items(state.liveMatches, key = { it.id }) { match -> LiveMatchRow(match) }
+            val liveGroups = state.liveMatches.groupBy { it.leagueId }
+            items(liveGroups.entries.toList(), key = { "live-${it.key}" }) { entry ->
+                CompetitionCard(
+                    title = "مباشر",
+                    liveMatches = entry.value
+                )
+            }
         }
 
-        if (state.upcomingFixtures.isNotEmpty()) {
-            item { SectionTitle("المباريات القادمة") }
-            items(state.upcomingFixtures, key = { it.id }) { fixture -> UpcomingMatchRow(fixture) }
+        val upcomingGroups = state.upcomingFixtures.groupBy { it.leagueName }
+        items(upcomingGroups.entries.toList(), key = { "up-${it.key}" }) { entry ->
+            CompetitionCard(
+                title = entry.key,
+                upcoming = entry.value
+            )
         }
 
-        if (state.recentResults.isNotEmpty()) {
-            item { SectionTitle("النتائج") }
-            items(state.recentResults, key = { it.id }) { result -> ResultRow(result) }
+        if (upcomingGroups.isEmpty() && state.recentResults.isNotEmpty()) {
+            val resultGroups = state.recentResults.groupBy { it.leagueName }
+            items(resultGroups.entries.toList(), key = { "res-${it.key}" }) { entry ->
+                CompetitionCard(
+                    title = entry.key,
+                    results = entry.value
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun SectionTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)
-    )
-}
+private fun FollowCard(live: LiveMatch?, upcoming: UpcomingFixture?) {
+    val home = live?.homeTeam ?: upcoming!!.homeTeam
+    val away = live?.awayTeam ?: upcoming!!.awayTeam
+    val middle = if (live != null) {
+        live.minute?.let { "$it'" } ?: live.status
+    } else {
+        formatTime(upcoming!!.dateTime)
+    }
 
-@Composable
-private fun MatchCard(content: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = LeagueBody)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) { content() }
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(LeagueHeader)
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.ExpandLess, null, tint = Color.White)
+                Spacer(Modifier.weight(1f))
+                Text("أتابع", color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(10.dp))
+                Icon(Icons.Default.Star, null, tint = Color.White)
+            }
+            MatchLine(home, away, middle, live?.homeScore, live?.awayScore, true)
+        }
     }
 }
 
 @Composable
-private fun LiveMatchRow(match: LiveMatch) = MatchCard {
-    TeamRow(match.homeTeam.name, match.homeTeam.logo, match.homeScore?.toString() ?: "-")
-    Spacer(Modifier.height(8.dp))
-    TeamRow(match.awayTeam.name, match.awayTeam.logo, match.awayScore?.toString() ?: "-")
-    Spacer(Modifier.height(8.dp))
-    Text(
-        text = match.minute?.let { "$it'" } ?: match.status,
-        color = MaterialTheme.colorScheme.primary,
-        style = MaterialTheme.typography.labelMedium,
-        fontWeight = FontWeight.Bold
-    )
+private fun CompetitionCard(
+    title: String,
+    liveMatches: List<LiveMatch> = emptyList(),
+    upcoming: List<UpcomingFixture> = emptyList(),
+    results: List<RecentResult> = emptyList()
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = LeagueBody)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(LeagueHeader)
+                    .padding(horizontal = 20.dp, vertical = 17.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.ExpandLess, null, tint = Color.White)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            liveMatches.forEach { match ->
+                MatchLine(
+                    home = match.homeTeam,
+                    away = match.awayTeam,
+                    middle = match.minute?.let { "$it'" } ?: match.status,
+                    homeScore = match.homeScore,
+                    awayScore = match.awayScore,
+                    showNotification = match.homeTeam.id == AL_AHLI_ID || match.awayTeam.id == AL_AHLI_ID
+                )
+            }
+
+            upcoming.forEach { fixture ->
+                MatchLine(
+                    home = fixture.homeTeam,
+                    away = fixture.awayTeam,
+                    middle = formatTime(fixture.dateTime),
+                    showNotification = fixture.homeTeam.id == AL_AHLI_ID || fixture.awayTeam.id == AL_AHLI_ID
+                )
+            }
+
+            results.forEach { result ->
+                MatchLine(
+                    home = result.homeTeam,
+                    away = result.awayTeam,
+                    middle = "النهاية",
+                    homeScore = result.homeScore,
+                    awayScore = result.awayScore
+                )
+            }
+        }
+    }
 }
 
 @Composable
-private fun UpcomingMatchRow(fixture: UpcomingFixture) = MatchCard {
-    Text(fixture.leagueName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Spacer(Modifier.height(8.dp))
-    TeamRow(fixture.homeTeam.name, fixture.homeTeam.logo, "")
-    Spacer(Modifier.height(8.dp))
-    TeamRow(fixture.awayTeam.name, fixture.awayTeam.logo, "")
-    Spacer(Modifier.height(8.dp))
-    Text(fixture.dateTime, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+private fun MatchLine(
+    home: Team,
+    away: Team,
+    middle: String,
+    homeScore: Int? = null,
+    awayScore: Int? = null,
+    showNotification: Boolean = false
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { }
+            .padding(horizontal = 18.dp, vertical = 19.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (showNotification) {
+            Icon(
+                Icons.Default.Notifications,
+                contentDescription = null,
+                tint = Color(0xFF707070),
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(6.dp))
+        } else {
+            Spacer(Modifier.width(24.dp))
+        }
+
+        TeamMini(home, Modifier.weight(1f))
+
+        Column(
+            modifier = Modifier.width(76.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (homeScore != null || awayScore != null) {
+                Text(
+                    text = "${homeScore ?: 0} - ${awayScore ?: 0}",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            } else {
+                Text(
+                    text = middle,
+                    color = Muted,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
+        }
+
+        TeamMini(away, Modifier.weight(1f), reverse = true)
+    }
 }
 
 @Composable
-private fun ResultRow(result: RecentResult) = MatchCard {
-    Text(result.leagueName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Spacer(Modifier.height(8.dp))
-    TeamRow(result.homeTeam.name, result.homeTeam.logo, result.homeScore.toString())
-    Spacer(Modifier.height(8.dp))
-    TeamRow(result.awayTeam.name, result.awayTeam.logo, result.awayScore.toString())
-}
+private fun TeamMini(team: Team, modifier: Modifier = Modifier, reverse: Boolean = false) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = if (reverse) Arrangement.End else Arrangement.Start
+    ) {
+        if (!reverse) {
+            Text(
+                team.name,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+            Spacer(Modifier.width(8.dp))
+        }
 
-@Composable
-private fun TeamRow(name: String, logo: String, score: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
         AsyncImage(
-            model = logo,
-            contentDescription = name,
-            modifier = Modifier.size(28.dp).clip(CircleShape)
+            model = team.logo,
+            contentDescription = team.name,
+            modifier = Modifier.size(34.dp)
         )
-        Spacer(Modifier.width(10.dp))
-        Text(name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-        if (score.isNotEmpty()) Text(score, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+        if (reverse) {
+            Spacer(Modifier.width(8.dp))
+            Text(
+                team.name,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false)
+            )
+        }
     }
+}
+
+private fun formatTime(raw: String): String {
+    val match = Regex("(\\d{2}):(\\d{2})").find(raw)
+    return match?.value ?: raw.take(5)
 }
 
 @Composable
@@ -236,10 +431,14 @@ private fun SimpleMessage(text: String, actionText: String, onAction: () -> Unit
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(text)
+        Text(text, color = Color.White)
         Spacer(Modifier.height(12.dp))
-        Card(onClick = onAction) {
-            Text(actionText, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+        Surface(
+            modifier = Modifier.clickable(onClick = onAction),
+            color = LeagueHeader,
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text(actionText, color = Color.White, modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp))
         }
     }
 }
