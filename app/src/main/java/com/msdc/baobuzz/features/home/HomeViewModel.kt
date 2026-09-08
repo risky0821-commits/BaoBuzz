@@ -45,9 +45,9 @@ constructor(
         val fixtures: List<ApiFixture>
     )
 
+    private val riyadhZone = ZoneId.of("Asia/Riyadh")
     private val dateCache = ConcurrentHashMap<String, CachedDateFixtures>()
     private val dateCacheTtlMs = 5 * 60 * 1000L
-    private val riyadhZone = ZoneId.of("Asia/Riyadh")
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -106,7 +106,7 @@ constructor(
                 val finishedStatuses = setOf("FT", "AET", "PEN")
                 val liveStatuses = setOf("1H", "HT", "2H", "ET", "BT", "P", "SUSP", "INT", "LIVE")
 
-                val liveMatches = fixtures
+                val live = fixtures
                     .filter { it.fixture.status.short in liveStatuses }
                     .map { it.toLiveMatch() }
                     .sortedWith(matchPriorityComparator(favoriteLeagueIds, favoriteTeamIds))
@@ -117,18 +117,19 @@ constructor(
                             it.fixture.status.short !in finishedStatuses &&
                             it.fixture.status.short !in liveStatuses
                     }
-                    .sortedBy { it.fixture.timestamp }
                     .map { it.toUpcomingFixture() }
                     .sortedWith(upcomingPriorityComparator(favoriteLeagueIds, favoriteTeamIds))
 
                 val recent = fixtures
-                    .filter { it.fixture.status.short in finishedStatuses }
-                    .sortedByDescending { it.fixture.timestamp }
+                    .filter {
+                        it.fixture.timestamp < nowEpochSeconds &&
+                            it.fixture.status.short in finishedStatuses
+                    }
                     .map { it.toRecentResult() }
                     .sortedWith(recentPriorityComparator(favoriteLeagueIds, favoriteTeamIds))
 
                 _uiState.value = HomeUiState.Success(
-                    liveMatches = liveMatches,
+                    liveMatches = live,
                     recentTransfers = emptyList(),
                     leagueStandings = emptyList(),
                     selectedLeagues = selectedLeagues,
@@ -143,11 +144,6 @@ constructor(
         }
     }
 
-    /**
-     * The home screen currently shows five date tabs (two days back through two days ahead).
-     * Fetching once per date gives us all competitions for those tabs and avoids an API call
-     * for every selected league. Cached dates are reused for five minutes.
-     */
     private suspend fun loadVisibleDateFixtures(forceRefresh: Boolean): List<ApiFixture> = coroutineScope {
         val today = LocalDate.now(riyadhZone)
         val dates = (-2L..2L).map { today.plusDays(it) }
@@ -198,7 +194,7 @@ private fun ApiFixture.toUpcomingFixture(): UpcomingFixture = UpcomingFixture(
     homeTeam = teams.home,
     awayTeam = teams.away,
     dateTime = fixture.date,
-    venue = fixture.venue.name,
+    venue = fixture.venue.name.orEmpty(),
     round = league.round,
     leagueId = league.id,
     leagueName = league.name
