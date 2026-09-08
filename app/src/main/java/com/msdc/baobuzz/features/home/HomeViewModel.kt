@@ -39,7 +39,16 @@ constructor(
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
-    /** User's selected leagues with metadata for enhanced UI */
+    val followedMatchIds: StateFlow<Set<String>> =
+        userPreferencesRepository
+            .getPreferences()
+            .map { it.followedMatchIds }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5000),
+                initialValue = emptySet()
+            )
+
     val selectedLeaguesWithData: StateFlow<List<League>> =
         userPreferencesRepository
             .getPreferences()
@@ -54,26 +63,11 @@ constructor(
                 initialValue = emptyList()
             )
 
-    /** Indicates if user has completed onboarding and selected leagues */
-    val hasSelectedLeagues: StateFlow<Boolean> =
-        userPreferencesRepository
-            .getPreferences()
-            .map { preferences ->
-                preferences.isOnboardingCompleted &&
-                    preferences.selectedLeagueIds.isNotEmpty()
-            }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5000),
-                initialValue = false
-            )
-
     init {
         loadHomeData()
         observeUserPreferencesChanges()
     }
 
-    /** Observes user preferences and reloads data when selected leagues change */
     private fun observeUserPreferencesChanges() {
         viewModelScope.launch {
             userPreferencesRepository
@@ -88,7 +82,6 @@ constructor(
         }
     }
 
-    /** Loads home screen data based on user's selected leagues */
     private fun loadHomeData() {
         viewModelScope.launch {
             try {
@@ -98,116 +91,60 @@ constructor(
                 val selectedLeagueIds = userPreferences.selectedLeagueIds
                 val favoriteTeamIds = userPreferences.selectedTeamIds.toSet()
 
-                if (!userPreferences.isOnboardingCompleted) {
-                    _uiState.value = HomeUiState.OnboardingRequired
-                    return@launch
-                }
-
                 if (selectedLeagueIds.isEmpty()) {
                     _uiState.value = HomeUiState.NoLeaguesSelected
                     return@launch
                 }
 
-                delay(300)
+                delay(150)
 
                 coroutineScope {
-                    val liveMatchesDeferred =
-                        async { footballRepository.getLiveMatches(selectedLeagueIds) }
-                    val recentTransfersDeferred =
-                        async { footballRepository.getRecentTransfers(selectedLeagueIds) }
-                    val leagueStandingsDeferred = async {
-                        selectedLeagueIds.mapNotNull { leagueId ->
-                            try {
-                                footballRepository.getLeagueStandings(leagueId)
-                            } catch (e: Exception) {
-                                null
-                            }
-                        }
-                    }
-                    val upcomingFixturesDeferred =
-                        async { footballRepository.getUpcomingFixtures(selectedLeagueIds, 8) }
-                    val recentResultsDeferred =
-                        async { footballRepository.getRecentResults(selectedLeagueIds, 6) }
-                    val leagueInsightsDeferred =
-                        async { footballRepository.getLeagueInsights(selectedLeagueIds) }
-                    val topScorersDeferred = async {
-                        selectedLeagueIds.flatMap { leagueId ->
-                            try {
-                                footballRepository.getTopScorers(leagueId).take(3)
-                            } catch (e: Exception) {
-                                emptyList()
-                            }
-                        }
-                    }
+                    // Keep the home feed intentionally light: only matches and results.
+                    val liveMatchesDeferred = async { footballRepository.getLiveMatches(selectedLeagueIds) }
+                    val upcomingFixturesDeferred = async { footballRepository.getUpcomingFixtures(selectedLeagueIds, 20) }
+                    val recentResultsDeferred = async { footballRepository.getRecentResults(selectedLeagueIds, 12) }
 
                     _uiState.value =
                         HomeUiState.Success(
-                            liveMatches =
-                                liveMatchesDeferred.await().favoriteLiveMatchesFirst(favoriteTeamIds),
-                            recentTransfers = recentTransfersDeferred.await(),
-                            leagueStandings = leagueStandingsDeferred.await(),
-                            selectedLeagues =
-                                selectedLeagueIds.mapNotNull { leagueId ->
-                                    LeagueData.getLeagueById(leagueId)
-                                },
-                            upcomingFixtures =
-                                upcomingFixturesDeferred.await().favoriteUpcomingFixturesFirst(favoriteTeamIds),
-                            recentResults =
-                                recentResultsDeferred.await().favoriteRecentResultsFirst(favoriteTeamIds),
-                            leagueInsights = leagueInsightsDeferred.await(),
-                            topScorers = topScorersDeferred.await()
+                            liveMatches = liveMatchesDeferred.await().favoriteLiveMatchesFirst(favoriteTeamIds),
+                            recentTransfers = emptyList(),
+                            leagueStandings = emptyList(),
+                            selectedLeagues = selectedLeagueIds.mapNotNull { LeagueData.getLeagueById(it) },
+                            upcomingFixtures = upcomingFixturesDeferred.await().favoriteUpcomingFixturesFirst(favoriteTeamIds),
+                            recentResults = recentResultsDeferred.await().favoriteRecentResultsFirst(favoriteTeamIds),
+                            leagueInsights = emptyList(),
+                            topScorers = emptyList()
                         )
                 }
             } catch (e: Exception) {
-                _uiState.value =
-                    HomeUiState.Error(
-                        message = e.message ?: "Failed to load football data",
-                        canRetry = true
-                    )
+                _uiState.value = HomeUiState.Error(e.message ?: "تعذر تحميل المباريات")
             }
         }
     }
 
-    fun retry() {
-        loadHomeData()
+    fun toggleFollowMatch(matchId: String) {
+        viewModelScope.launch {
+            userPreferencesRepository.toggleFollowMatch(matchId)
+        }
     }
 
-    fun refreshData() {
-        loadHomeData()
-    }
-
-    fun loadData() {
-        loadHomeData()
-    }
+    fun retry() = loadHomeData()
+    fun refreshData() = loadHomeData()
+    fun loadData() = loadHomeData()
 }
 
-private fun List<LiveMatch>.favoriteLiveMatchesFirst(
-    favoriteTeamIds: Set<Int>
-): List<LiveMatch> =
-    sortedByDescending { match ->
-        match.homeTeam.id in favoriteTeamIds || match.awayTeam.id in favoriteTeamIds
-    }
+private fun List<LiveMatch>.favoriteLiveMatchesFirst(favoriteTeamIds: Set<Int>): List<LiveMatch> =
+    sortedByDescending { it.homeTeam.id in favoriteTeamIds || it.awayTeam.id in favoriteTeamIds }
 
-private fun List<UpcomingFixture>.favoriteUpcomingFixturesFirst(
-    favoriteTeamIds: Set<Int>
-): List<UpcomingFixture> =
-    sortedByDescending { fixture ->
-        fixture.homeTeam.id in favoriteTeamIds || fixture.awayTeam.id in favoriteTeamIds
-    }
+private fun List<UpcomingFixture>.favoriteUpcomingFixturesFirst(favoriteTeamIds: Set<Int>): List<UpcomingFixture> =
+    sortedByDescending { it.homeTeam.id in favoriteTeamIds || it.awayTeam.id in favoriteTeamIds }
 
-private fun List<RecentResult>.favoriteRecentResultsFirst(
-    favoriteTeamIds: Set<Int>
-): List<RecentResult> =
-    sortedByDescending { result ->
-        result.homeTeam.id in favoriteTeamIds || result.awayTeam.id in favoriteTeamIds
-    }
+private fun List<RecentResult>.favoriteRecentResultsFirst(favoriteTeamIds: Set<Int>): List<RecentResult> =
+    sortedByDescending { it.homeTeam.id in favoriteTeamIds || it.awayTeam.id in favoriteTeamIds }
 
-/** Represents the different states of the Home screen UI */
 sealed class HomeUiState {
     object Loading : HomeUiState()
-
     object OnboardingRequired : HomeUiState()
-
     object NoLeaguesSelected : HomeUiState()
 
     data class Success(
