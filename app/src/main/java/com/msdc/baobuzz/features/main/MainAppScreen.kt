@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.SportsSoccer
@@ -52,7 +51,6 @@ fun MainAppScreen(
 
     val bottomNavItems = listOf(
         BottomNavItem(BaoBuzzRoutes.HOME, Icons.Default.SportsSoccer, "المباريات"),
-        BottomNavItem(BaoBuzzRoutes.NEWS, Icons.Default.Article, "الأخبار"),
         BottomNavItem(BaoBuzzRoutes.LEAGUES, Icons.Default.EmojiEvents, "البطولات"),
         BottomNavItem(BaoBuzzRoutes.FAVORITES, Icons.Default.Star, "أتابع"),
         BottomNavItem(BaoBuzzRoutes.SETTINGS, Icons.Default.Menu, "المزيد")
@@ -94,12 +92,9 @@ fun MainAppScreen(
                 )
             }
 
-            composable(BaoBuzzRoutes.NEWS) {
-                PlaceholderScreen("الأخبار", "واجهة الأخبار ستُربط بمصدر الأخبار لاحقًا")
-            }
             composable(BaoBuzzRoutes.LEAGUES) { LeaguesScreen(navController = navController) }
             composable(BaoBuzzRoutes.FAVORITES) {
-                PlaceholderScreen("أتابع", "هنا ستظهر الفرق والبطولات التي تتابعها")
+                PlaceholderScreen("أتابع", "هنا ستظهر المباريات التي اخترت متابعتها")
             }
             composable(BaoBuzzRoutes.TRANSFERS) {
                 val teamId = it.arguments?.getString("teamId")?.toIntOrNull()
