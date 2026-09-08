@@ -22,11 +22,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -58,7 +56,10 @@ import com.msdc.baobuzz.core.models.LiveMatch
 import com.msdc.baobuzz.core.models.RecentResult
 import com.msdc.baobuzz.core.models.UpcomingFixture
 import com.msdc.baobuzz.models.Team
+import java.time.Instant
 import java.time.LocalDate
+import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -68,6 +69,7 @@ private val LeagueHeader = Color(0xFF2A2A2A)
 private val LeagueBody = Color(0xFF1D1D1D)
 private val AccentGreen = Color(0xFF66E47B)
 private val Muted = Color(0xFFA9A9A9)
+private val RiyadhZone = ZoneId.of("Asia/Riyadh")
 private const val AL_AHLI_ID = PersonalFootballDefaults.AL_AHLI_JEDDAH_TEAM_ID
 
 @Composable
@@ -78,14 +80,15 @@ fun FotMobHomeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val followedMatchIds by viewModel.followedMatchIds.collectAsState()
+    var selectedDate by remember { mutableStateOf(LocalDate.now(RiyadhZone)) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(AppBlack)
     ) {
-        FotMobTopBar(onSettings = onNavigateToSettings)
-        DateStrip()
+        ScoresTopBar(onSettings = onNavigateToSettings)
+        DateStrip(selectedDate = selectedDate, onSelectDate = { selectedDate = it })
 
         when (val state = uiState) {
             is HomeUiState.Loading -> LoadingState()
@@ -94,6 +97,7 @@ fun FotMobHomeScreen(
             is HomeUiState.Error -> SimpleMessage(state.message, "إعادة المحاولة") { viewModel.retry() }
             is HomeUiState.Success -> MatchFeed(
                 state = state,
+                selectedDate = selectedDate,
                 followedMatchIds = followedMatchIds,
                 onToggleFollow = viewModel::toggleFollowMatch
             )
@@ -102,7 +106,7 @@ fun FotMobHomeScreen(
 }
 
 @Composable
-private fun FotMobTopBar(onSettings: () -> Unit) {
+private fun ScoresTopBar(onSettings: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -113,15 +117,7 @@ private fun FotMobTopBar(onSettings: () -> Unit) {
         IconButton(onClick = onSettings) {
             Icon(Icons.Default.MoreVert, contentDescription = "المزيد", tint = Color.White)
         }
-        IconButton(onClick = {}) {
-            Icon(Icons.Default.Search, contentDescription = "بحث", tint = Color.White)
-        }
-        IconButton(onClick = {}) {
-            Icon(Icons.Default.CalendarMonth, contentDescription = "التقويم", tint = Color.White)
-        }
-
         Spacer(Modifier.weight(1f))
-
         Surface(color = Color(0xFF3A3A3A), shape = RoundedCornerShape(24.dp)) {
             Row(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -129,24 +125,22 @@ private fun FotMobTopBar(onSettings: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(7.dp)
             ) {
                 Text("مباشر", color = Color.White, fontWeight = FontWeight.SemiBold)
-                Box(Modifier.size(17.dp).background(Color(0xFF8C8C8C), CircleShape))
+                Box(Modifier.size(10.dp).background(AccentGreen, CircleShape))
             }
         }
-
-        Spacer(Modifier.width(18.dp))
-
+        Spacer(Modifier.width(16.dp))
         Text(
-            text = "SCORES",
+            text = "المباريات",
             color = Color.White,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Black
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold
         )
     }
 }
 
 @Composable
-private fun DateStrip() {
-    val today = LocalDate.now()
+private fun DateStrip(selectedDate: LocalDate, onSelectDate: (LocalDate) -> Unit) {
+    val today = LocalDate.now(RiyadhZone)
     val formatter = remember { DateTimeFormatter.ofPattern("EEE dd MMM", Locale("ar")) }
     val days = remember(today) {
         (-2L..2L).map { offset ->
@@ -167,9 +161,11 @@ private fun DateStrip() {
         horizontalArrangement = Arrangement.spacedBy(22.dp)
     ) {
         items(days, key = { it.first.toString() }) { (date, label) ->
-            val selected = date == today
+            val selected = date == selectedDate
             Column(
-                modifier = Modifier.padding(vertical = 10.dp),
+                modifier = Modifier
+                    .clickable { onSelectDate(date) }
+                    .padding(vertical = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
@@ -202,18 +198,24 @@ private fun LoadingState() {
 @Composable
 private fun MatchFeed(
     state: HomeUiState.Success,
+    selectedDate: LocalDate,
     followedMatchIds: Set<String>,
     onToggleFollow: (String) -> Unit
 ) {
-    val followedLive = state.liveMatches.filter { match ->
-        match.id in followedMatchIds || isAlAhli(match.homeTeam, match.awayTeam)
-    }
-    val followedUpcoming = state.upcomingFixtures.filter { fixture ->
-        fixture.id in followedMatchIds || isAlAhli(fixture.homeTeam, fixture.awayTeam)
-    }
-    val followedResults = state.recentResults.filter { result ->
-        result.id in followedMatchIds || isAlAhli(result.homeTeam, result.awayTeam)
-    }
+    val today = LocalDate.now(RiyadhZone)
+    val live = if (selectedDate == today) state.liveMatches else emptyList()
+    val upcoming = state.upcomingFixtures.filter { matchDate(it.dateTime) == selectedDate }
+    val results = state.recentResults.filter { matchDate(it.date) == selectedDate }
+
+    val followedLive = live.filter { it.id in followedMatchIds || isAlAhli(it.homeTeam, it.awayTeam) }
+    val followedUpcoming = upcoming.filter { it.id in followedMatchIds || isAlAhli(it.homeTeam, it.awayTeam) }
+    val followedResults = results.filter { it.id in followedMatchIds || isAlAhli(it.homeTeam, it.awayTeam) }
+
+    val leagueIds = buildSet {
+        live.forEach { add(it.leagueId) }
+        upcoming.forEach { add(it.leagueId) }
+        results.forEach { add(it.leagueId) }
+    }.toList()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -234,36 +236,24 @@ private fun MatchFeed(
             }
         }
 
-        if (state.liveMatches.isNotEmpty()) {
-            val liveGroups = state.liveMatches.groupBy { it.leagueId }
-            items(liveGroups.entries.toList(), key = { "live-${it.key}" }) { entry ->
-                CompetitionCard(
-                    title = leagueTitle(entry.key, state),
-                    liveMatches = entry.value,
-                    followedMatchIds = followedMatchIds,
-                    onToggleFollow = onToggleFollow
-                )
-            }
-        }
-
-        val upcomingGroups = state.upcomingFixtures.groupBy { it.leagueName }
-        items(upcomingGroups.entries.toList(), key = { "up-${it.key}" }) { entry ->
+        items(leagueIds, key = { "league-$it" }) { leagueId ->
             CompetitionCard(
-                title = arabicLeagueName(entry.key),
-                upcoming = entry.value,
+                title = leagueTitle(leagueId, state),
+                liveMatches = live.filter { it.leagueId == leagueId },
+                upcoming = upcoming.filter { it.leagueId == leagueId },
+                results = results.filter { it.leagueId == leagueId },
                 followedMatchIds = followedMatchIds,
                 onToggleFollow = onToggleFollow
             )
         }
 
-        if (upcomingGroups.isEmpty() && state.recentResults.isNotEmpty()) {
-            val resultGroups = state.recentResults.groupBy { it.leagueName }
-            items(resultGroups.entries.toList(), key = { "res-${it.key}" }) { entry ->
-                CompetitionCard(
-                    title = arabicLeagueName(entry.key),
-                    results = entry.value,
-                    followedMatchIds = followedMatchIds,
-                    onToggleFollow = onToggleFollow
+        if (leagueIds.isEmpty()) {
+            item(key = "empty-day") {
+                Text(
+                    text = "لا توجد مباريات في هذا اليوم",
+                    color = Muted,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
+                    style = MaterialTheme.typography.bodyLarge
                 )
             }
         }
@@ -327,7 +317,7 @@ private fun CompetitionCard(
                     matchId = fixture.id,
                     home = fixture.homeTeam,
                     away = fixture.awayTeam,
-                    middle = formatTime(fixture.dateTime),
+                    middle = formatRiyadhTime(fixture.dateTime),
                     isFollowed = fixture.id in followedMatchIds || isAlAhli(fixture.homeTeam, fixture.awayTeam),
                     onToggleFollow = onToggleFollow
                 )
@@ -367,15 +357,15 @@ private fun MatchLine(
     if (showFollowDialog) {
         AlertDialog(
             onDismissRequest = { showFollowDialog = false },
-            title = { Text(if (isFollowed && !isAlAhliMatch) "إلغاء متابعة المباراة؟" else "تابع المباراة؟") },
+            title = { Text(if (isFollowed) "إلغاء متابعة المباراة؟" else "تابع المباراة؟") },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (!isAlAhliMatch) onToggleFollow(matchId)
+                        onToggleFollow(matchId)
                         showFollowDialog = false
                     }
                 ) {
-                    Text(if (isFollowed && !isAlAhliMatch) "إلغاء المتابعة" else "تابع المباراة")
+                    Text(if (isFollowed) "إلغاء المتابعة" else "تابع المباراة")
                 }
             },
             dismissButton = {
@@ -389,7 +379,10 @@ private fun MatchLine(
             .fillMaxWidth()
             .combinedClickable(
                 onClick = { },
-                onLongClick = { showFollowDialog = true }
+                onLongClick = {
+                    // Al-Ahli is followed automatically, so no redundant action is shown.
+                    if (!isAlAhliMatch) showFollowDialog = true
+                }
             )
             .padding(horizontal = 18.dp, vertical = 19.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -474,7 +467,10 @@ private fun TeamMini(team: Team, modifier: Modifier = Modifier, reverse: Boolean
 private fun isAlAhli(home: Team, away: Team): Boolean = home.id == AL_AHLI_ID || away.id == AL_AHLI_ID
 
 private fun leagueTitle(leagueId: Int, state: HomeUiState.Success): String =
-    state.selectedLeagues.firstOrNull { it.id == leagueId }?.name?.let(::arabicLeagueName) ?: "المباريات المباشرة"
+    state.selectedLeagues.firstOrNull { it.id == leagueId }?.name?.let(::arabicLeagueName)
+        ?: state.upcomingFixtures.firstOrNull { it.leagueId == leagueId }?.leagueName?.let(::arabicLeagueName)
+        ?: state.recentResults.firstOrNull { it.leagueId == leagueId }?.leagueName?.let(::arabicLeagueName)
+        ?: "المباريات"
 
 private fun arabicLeagueName(name: String): String = when (name.lowercase()) {
     "saudi pro league", "pro league" -> "دوري روشن السعودي"
@@ -486,10 +482,21 @@ private fun arabicLeagueName(name: String): String = when (name.lowercase()) {
     else -> name
 }
 
-private fun formatTime(raw: String): String {
-    val match = Regex("(\\d{2}):(\\d{2})").find(raw)
-    return match?.value ?: raw.take(5)
-}
+private fun matchDate(raw: String): LocalDate? =
+    runCatching { OffsetDateTime.parse(raw).atZoneSameInstant(RiyadhZone).toLocalDate() }.getOrElse {
+        runCatching { Instant.parse(raw).atZone(RiyadhZone).toLocalDate() }.getOrNull()
+    }
+
+private fun formatRiyadhTime(raw: String): String =
+    runCatching {
+        OffsetDateTime.parse(raw)
+            .atZoneSameInstant(RiyadhZone)
+            .format(DateTimeFormatter.ofPattern("HH:mm"))
+    }.getOrElse {
+        runCatching {
+            Instant.parse(raw).atZone(RiyadhZone).format(DateTimeFormatter.ofPattern("HH:mm"))
+        }.getOrElse { raw.take(5) }
+    }
 
 @Composable
 private fun SimpleMessage(text: String, actionText: String, onAction: () -> Unit) {
