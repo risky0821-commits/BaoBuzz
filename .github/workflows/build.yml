@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [main, dev, feat/simple-follow]
+    branches: [main, dev]
   pull_request:
     branches: [main]
 
