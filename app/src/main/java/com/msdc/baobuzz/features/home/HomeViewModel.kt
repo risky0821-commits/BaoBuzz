@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
 @HiltViewModel
@@ -40,6 +41,14 @@ constructor(
     private val footballApi: FootballApi,
     private val userPreferencesRepository: UserPreferencesRepository
 ) : ViewModel() {
+
+    private data class CachedLeagueWindow(
+        val fetchedAt: Long,
+        val fixtures: List<ApiFixture>
+    )
+
+    private val matchWindowCache = ConcurrentHashMap<Int, CachedLeagueWindow>()
+    private val matchWindowCacheTtlMs = 5 * 60 * 1000L
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -85,7 +94,7 @@ constructor(
         }
     }
 
-    private fun loadHomeData() {
+    private fun loadHomeData(forceRefresh: Boolean = false) {
         viewModelScope.launch {
             try {
                 _uiState.value = HomeUiState.Loading
@@ -104,7 +113,7 @@ constructor(
 
                 coroutineScope {
                     val liveDeferred = async { footballRepository.getLiveMatches(selectedLeagueIds) }
-                    val windowDeferred = async { loadMatchWindow(selectedLeagues) }
+                    val windowDeferred = async { loadMatchWindow(selectedLeagues, forceRefresh) }
 
                     val (upcoming, recent) = windowDeferred.await()
                     _uiState.value = HomeUiState.Success(
@@ -125,37 +134,52 @@ constructor(
     }
 
     private suspend fun loadMatchWindow(
-        leagues: List<League>
+        leagues: List<League>,
+        forceRefresh: Boolean
     ): Pair<List<UpcomingFixture>, List<RecentResult>> = coroutineScope {
         val today = LocalDate.now()
         val from = today.minusDays(7).toString()
         val to = today.plusDays(21).toString()
-        val nowEpochSeconds = System.currentTimeMillis() / 1000L
+        val nowMs = System.currentTimeMillis()
+        val nowEpochSeconds = nowMs / 1000L
         val finishedStatuses = setOf("FT", "AET", "PEN")
 
         val fixtures = leagues.map { league ->
             async {
-                runCatching {
+                val cached = matchWindowCache[league.id]
+                if (!forceRefresh && cached != null && nowMs - cached.fetchedAt < matchWindowCacheTtlMs) {
+                    return@async cached.fixtures
+                }
+
+                val fetched = runCatching {
                     footballApi.getFixtures(
                         league = league.id,
                         season = league.season,
                         from = from,
                         to = to
                     ).response
-                }.getOrDefault(emptyList())
+                }.getOrElse {
+                    cached?.fixtures ?: emptyList()
+                }
+
+                matchWindowCache[league.id] = CachedLeagueWindow(
+                    fetchedAt = nowMs,
+                    fixtures = fetched
+                )
+                fetched
             }
         }.awaitAll().flatten()
 
         val upcoming = fixtures
             .filter { it.fixture.timestamp >= nowEpochSeconds && it.fixture.status.short !in finishedStatuses }
             .sortedBy { it.fixture.timestamp }
-            .take(30)
+            .take(40)
             .map { it.toUpcomingFixture() }
 
         val recent = fixtures
             .filter { it.fixture.timestamp < nowEpochSeconds && it.fixture.status.short in finishedStatuses }
             .sortedByDescending { it.fixture.timestamp }
-            .take(20)
+            .take(30)
             .map { it.toRecentResult() }
 
         upcoming to recent
@@ -165,8 +189,8 @@ constructor(
         viewModelScope.launch { userPreferencesRepository.toggleFollowMatch(matchId) }
     }
 
-    fun retry() = loadHomeData()
-    fun refreshData() = loadHomeData()
+    fun retry() = loadHomeData(forceRefresh = true)
+    fun refreshData() = loadHomeData(forceRefresh = true)
     fun loadData() = loadHomeData()
 }
 
