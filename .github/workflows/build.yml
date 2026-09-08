@@ -1,5 +1,6 @@
 name: Build APK
 
+# Manual builds are available from the Actions tab.
 on:
   workflow_dispatch:
   push:
