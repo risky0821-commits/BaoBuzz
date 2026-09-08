@@ -8,13 +8,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Analytics
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.SportsSoccer
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -38,10 +38,8 @@ import com.msdc.baobuzz.core.navigation.BaoBuzzRoutes
 import com.msdc.baobuzz.features.home.FotMobHomeScreen
 import com.msdc.baobuzz.features.leagues.LeaguesScreen
 import com.msdc.baobuzz.features.settings.SettingsScreen
-import com.msdc.baobuzz.features.stats.StatsScreen
 import com.msdc.baobuzz.presentation.transfers.TransfersScreen
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppScreen(
     navController: NavHostController = rememberNavController(),
@@ -53,10 +51,11 @@ fun MainAppScreen(
     val currentDestination = navBackStackEntry?.destination
 
     val bottomNavItems = listOf(
-        BottomNavItem(BaoBuzzRoutes.HOME, Icons.Default.Home, "المباريات"),
-        BottomNavItem(BaoBuzzRoutes.LEAGUES, Icons.Filled.List, "البطولات"),
-        BottomNavItem(BaoBuzzRoutes.STATS, Icons.Default.Analytics, "الإحصائيات"),
-        BottomNavItem(BaoBuzzRoutes.SETTINGS, Icons.Default.Settings, "الإعدادات")
+        BottomNavItem(BaoBuzzRoutes.HOME, Icons.Default.SportsSoccer, "المباريات"),
+        BottomNavItem(BaoBuzzRoutes.NEWS, Icons.Default.Article, "الأخبار"),
+        BottomNavItem(BaoBuzzRoutes.LEAGUES, Icons.Default.EmojiEvents, "البطولات"),
+        BottomNavItem(BaoBuzzRoutes.FAVORITES, Icons.Default.Star, "أتابع"),
+        BottomNavItem(BaoBuzzRoutes.SETTINGS, Icons.Default.Menu, "المزيد")
     )
 
     Scaffold(
@@ -95,8 +94,13 @@ fun MainAppScreen(
                 )
             }
 
+            composable(BaoBuzzRoutes.NEWS) {
+                PlaceholderScreen("الأخبار", "واجهة الأخبار ستُربط بمصدر الأخبار لاحقًا")
+            }
             composable(BaoBuzzRoutes.LEAGUES) { LeaguesScreen(navController = navController) }
-            composable(BaoBuzzRoutes.STATS) { StatsScreen() }
+            composable(BaoBuzzRoutes.FAVORITES) {
+                PlaceholderScreen("أتابع", "هنا ستظهر الفرق والبطولات التي تتابعها")
+            }
             composable(BaoBuzzRoutes.TRANSFERS) {
                 val teamId = it.arguments?.getString("teamId")?.toIntOrNull()
                 if (teamId != null) TransfersScreen(teamId = teamId, navController = navController)
@@ -128,17 +132,13 @@ private fun PlaceholderScreen(title: String, description: String) {
         Spacer(modifier = Modifier.height(32.dp))
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(text = "🚧 Under Construction", style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "This screen will be implemented with modern Compose UI",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                )
-            }
+            Text(
+                text = "قيد التجهيز",
+                modifier = Modifier.padding(20.dp).align(Alignment.CenterHorizontally),
+                style = MaterialTheme.typography.titleMedium
+            )
         }
     }
 }
