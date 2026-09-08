@@ -86,9 +86,15 @@ interface FootballApi {
     @GET("predictions")
     suspend fun getFixturePredictions(@Query("fixture") fixtureId: Int): PredictionsResponse
 
+    /**
+     * One request returns every fixture scheduled on the requested local date.
+     * League is deliberately optional: the home feed should show all matches,
+     * while the user's selected leagues are used only for ordering/favourites.
+     */
     @GET("fixtures")
     suspend fun getFixturesByDate(
         @Query("date") date: String,
-        @Query("league") leagues: String
+        @Query("timezone") timezone: String = "Asia/Riyadh",
+        @Query("league") league: Int? = null
     ): FixturesResponse
 }
