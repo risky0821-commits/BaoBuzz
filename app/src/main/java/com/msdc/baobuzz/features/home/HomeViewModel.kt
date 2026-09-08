@@ -2,7 +2,6 @@ package com.msdc.baobuzz.features.home
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.msdc.baobuzz.core.api.FootballRepository
 import com.msdc.baobuzz.core.data.LeagueData
 import com.msdc.baobuzz.core.models.LeagueInsight
 import com.msdc.baobuzz.core.models.LeagueStanding
@@ -19,7 +18,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +28,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 
@@ -37,18 +36,18 @@ import javax.inject.Inject
 class HomeViewModel
 @Inject
 constructor(
-    private val footballRepository: FootballRepository,
     private val footballApi: FootballApi,
     private val userPreferencesRepository: UserPreferencesRepository
 ) : ViewModel() {
 
-    private data class CachedLeagueWindow(
+    private data class CachedDateFixtures(
         val fetchedAt: Long,
         val fixtures: List<ApiFixture>
     )
 
-    private val matchWindowCache = ConcurrentHashMap<Int, CachedLeagueWindow>()
-    private val matchWindowCacheTtlMs = 5 * 60 * 1000L
+    private val dateCache = ConcurrentHashMap<String, CachedDateFixtures>()
+    private val dateCacheTtlMs = 5 * 60 * 1000L
+    private val riyadhZone = ZoneId.of("Asia/Riyadh")
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -86,10 +85,8 @@ constructor(
                 .getPreferences()
                 .map { it.selectedLeagueIds }
                 .distinctUntilChanged()
-                .collect { selectedLeagueIds ->
-                    if (selectedLeagueIds.isNotEmpty() && _uiState.value !is HomeUiState.Loading) {
-                        loadHomeData()
-                    }
+                .collect {
+                    if (_uiState.value !is HomeUiState.Loading) loadHomeData()
                 }
         }
     }
@@ -101,88 +98,79 @@ constructor(
 
                 val preferences = userPreferencesRepository.getPreferences().first()
                 val selectedLeagues = preferences.selectedLeagueIds.mapNotNull { LeagueData.getLeagueById(it) }
-                val selectedLeagueIds = selectedLeagues.map { it.id }
+                val favoriteLeagueIds = preferences.selectedLeagueIds.toSet()
                 val favoriteTeamIds = preferences.selectedTeamIds.toSet()
 
-                if (selectedLeagueIds.isEmpty()) {
-                    _uiState.value = HomeUiState.NoLeaguesSelected
-                    return@launch
-                }
+                val fixtures = loadVisibleDateFixtures(forceRefresh)
+                val nowEpochSeconds = System.currentTimeMillis() / 1000L
+                val finishedStatuses = setOf("FT", "AET", "PEN")
+                val liveStatuses = setOf("1H", "HT", "2H", "ET", "BT", "P", "SUSP", "INT", "LIVE")
 
-                delay(150)
+                val liveMatches = fixtures
+                    .filter { it.fixture.status.short in liveStatuses }
+                    .map { it.toLiveMatch() }
+                    .sortedWith(matchPriorityComparator(favoriteLeagueIds, favoriteTeamIds))
 
-                coroutineScope {
-                    val liveDeferred = async { footballRepository.getLiveMatches(selectedLeagueIds) }
-                    val windowDeferred = async { loadMatchWindow(selectedLeagues, forceRefresh) }
+                val upcoming = fixtures
+                    .filter {
+                        it.fixture.timestamp >= nowEpochSeconds &&
+                            it.fixture.status.short !in finishedStatuses &&
+                            it.fixture.status.short !in liveStatuses
+                    }
+                    .sortedBy { it.fixture.timestamp }
+                    .map { it.toUpcomingFixture() }
+                    .sortedWith(upcomingPriorityComparator(favoriteLeagueIds, favoriteTeamIds))
 
-                    val (upcoming, recent) = windowDeferred.await()
-                    _uiState.value = HomeUiState.Success(
-                        liveMatches = liveDeferred.await().favoriteLiveMatchesFirst(favoriteTeamIds),
-                        recentTransfers = emptyList(),
-                        leagueStandings = emptyList(),
-                        selectedLeagues = selectedLeagues,
-                        upcomingFixtures = upcoming.favoriteUpcomingFixturesFirst(favoriteTeamIds),
-                        recentResults = recent.favoriteRecentResultsFirst(favoriteTeamIds),
-                        leagueInsights = emptyList(),
-                        topScorers = emptyList()
-                    )
-                }
+                val recent = fixtures
+                    .filter { it.fixture.status.short in finishedStatuses }
+                    .sortedByDescending { it.fixture.timestamp }
+                    .map { it.toRecentResult() }
+                    .sortedWith(recentPriorityComparator(favoriteLeagueIds, favoriteTeamIds))
+
+                _uiState.value = HomeUiState.Success(
+                    liveMatches = liveMatches,
+                    recentTransfers = emptyList(),
+                    leagueStandings = emptyList(),
+                    selectedLeagues = selectedLeagues,
+                    upcomingFixtures = upcoming,
+                    recentResults = recent,
+                    leagueInsights = emptyList(),
+                    topScorers = emptyList()
+                )
             } catch (e: Exception) {
                 _uiState.value = HomeUiState.Error(e.message ?: "تعذر تحميل المباريات")
             }
         }
     }
 
-    private suspend fun loadMatchWindow(
-        leagues: List<League>,
-        forceRefresh: Boolean
-    ): Pair<List<UpcomingFixture>, List<RecentResult>> = coroutineScope {
-        val today = LocalDate.now()
-        val from = today.minusDays(7).toString()
-        val to = today.plusDays(21).toString()
+    /**
+     * The home screen currently shows five date tabs (two days back through two days ahead).
+     * Fetching once per date gives us all competitions for those tabs and avoids an API call
+     * for every selected league. Cached dates are reused for five minutes.
+     */
+    private suspend fun loadVisibleDateFixtures(forceRefresh: Boolean): List<ApiFixture> = coroutineScope {
+        val today = LocalDate.now(riyadhZone)
+        val dates = (-2L..2L).map { today.plusDays(it) }
         val nowMs = System.currentTimeMillis()
-        val nowEpochSeconds = nowMs / 1000L
-        val finishedStatuses = setOf("FT", "AET", "PEN")
 
-        val fixtures = leagues.map { league ->
+        dates.map { date ->
             async {
-                val cached = matchWindowCache[league.id]
-                if (!forceRefresh && cached != null && nowMs - cached.fetchedAt < matchWindowCacheTtlMs) {
+                val key = date.toString()
+                val cached = dateCache[key]
+                if (!forceRefresh && cached != null && nowMs - cached.fetchedAt < dateCacheTtlMs) {
                     return@async cached.fixtures
                 }
 
                 val fetched = runCatching {
-                    footballApi.getFixtures(
-                        league = league.id,
-                        season = league.season,
-                        from = from,
-                        to = to
-                    ).response
+                    footballApi.getFixturesByDate(date = key).response
                 }.getOrElse {
                     cached?.fixtures ?: emptyList()
                 }
 
-                matchWindowCache[league.id] = CachedLeagueWindow(
-                    fetchedAt = nowMs,
-                    fixtures = fetched
-                )
+                dateCache[key] = CachedDateFixtures(nowMs, fetched)
                 fetched
             }
-        }.awaitAll().flatten()
-
-        val upcoming = fixtures
-            .filter { it.fixture.timestamp >= nowEpochSeconds && it.fixture.status.short !in finishedStatuses }
-            .sortedBy { it.fixture.timestamp }
-            .take(40)
-            .map { it.toUpcomingFixture() }
-
-        val recent = fixtures
-            .filter { it.fixture.timestamp < nowEpochSeconds && it.fixture.status.short in finishedStatuses }
-            .sortedByDescending { it.fixture.timestamp }
-            .take(30)
-            .map { it.toRecentResult() }
-
-        upcoming to recent
+        }.awaitAll().flatten().distinctBy { it.fixture.id }
     }
 
     fun toggleFollowMatch(matchId: String) {
@@ -193,6 +181,17 @@ constructor(
     fun refreshData() = loadHomeData(forceRefresh = true)
     fun loadData() = loadHomeData()
 }
+
+private fun ApiFixture.toLiveMatch(): LiveMatch = LiveMatch(
+    id = fixture.id.toString(),
+    homeTeam = teams.home,
+    awayTeam = teams.away,
+    homeScore = goals.home,
+    awayScore = goals.away,
+    status = fixture.status.short,
+    minute = fixture.status.elapsed,
+    leagueId = league.id
+)
 
 private fun ApiFixture.toUpcomingFixture(): UpcomingFixture = UpcomingFixture(
     id = fixture.id.toString(),
@@ -217,14 +216,29 @@ private fun ApiFixture.toRecentResult(): RecentResult = RecentResult(
     leagueName = league.name
 )
 
-private fun List<LiveMatch>.favoriteLiveMatchesFirst(favoriteTeamIds: Set<Int>): List<LiveMatch> =
-    sortedByDescending { it.homeTeam.id in favoriteTeamIds || it.awayTeam.id in favoriteTeamIds }
+private fun isFavoriteTeams(homeId: Int, awayId: Int, favoriteTeamIds: Set<Int>) =
+    homeId in favoriteTeamIds || awayId in favoriteTeamIds
 
-private fun List<UpcomingFixture>.favoriteUpcomingFixturesFirst(favoriteTeamIds: Set<Int>): List<UpcomingFixture> =
-    sortedByDescending { it.homeTeam.id in favoriteTeamIds || it.awayTeam.id in favoriteTeamIds }
+private fun matchPriorityComparator(
+    favoriteLeagueIds: Set<Int>,
+    favoriteTeamIds: Set<Int>
+): Comparator<LiveMatch> = compareByDescending<LiveMatch> {
+    isFavoriteTeams(it.homeTeam.id, it.awayTeam.id, favoriteTeamIds)
+}.thenByDescending { it.leagueId in favoriteLeagueIds }
 
-private fun List<RecentResult>.favoriteRecentResultsFirst(favoriteTeamIds: Set<Int>): List<RecentResult> =
-    sortedByDescending { it.homeTeam.id in favoriteTeamIds || it.awayTeam.id in favoriteTeamIds }
+private fun upcomingPriorityComparator(
+    favoriteLeagueIds: Set<Int>,
+    favoriteTeamIds: Set<Int>
+): Comparator<UpcomingFixture> = compareByDescending<UpcomingFixture> {
+    isFavoriteTeams(it.homeTeam.id, it.awayTeam.id, favoriteTeamIds)
+}.thenByDescending { it.leagueId in favoriteLeagueIds }.thenBy { it.dateTime }
+
+private fun recentPriorityComparator(
+    favoriteLeagueIds: Set<Int>,
+    favoriteTeamIds: Set<Int>
+): Comparator<RecentResult> = compareByDescending<RecentResult> {
+    isFavoriteTeams(it.homeTeam.id, it.awayTeam.id, favoriteTeamIds)
+}.thenByDescending { it.leagueId in favoriteLeagueIds }.thenByDescending { it.date }
 
 sealed class HomeUiState {
     object Loading : HomeUiState()
