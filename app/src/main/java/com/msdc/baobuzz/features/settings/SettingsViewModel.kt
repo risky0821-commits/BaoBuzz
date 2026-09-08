@@ -21,151 +21,87 @@ constructor(private val userPreferencesRepository: UserPreferencesRepository) : 
     private val _uiState = MutableStateFlow<SettingsUiState>(SettingsUiState.Loading)
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    /** Available leagues for selection */
     val availableLeagues: List<League> = LeagueData.getPopularLeagues()
 
     init {
         observeUserPreferences()
     }
 
-    /** Observes user preferences and updates UI state */
     private fun observeUserPreferences() {
         viewModelScope.launch {
             try {
                 userPreferencesRepository.getPreferences().collect { preferences ->
-                    val selectedLeagues =
-                        preferences.selectedLeagueIds.mapNotNull { leagueId ->
-                            LeagueData.getLeagueById(leagueId)
-                        }
-
-                    _uiState.value =
-                        SettingsUiState.Loaded(
-                            selectedLeagues = selectedLeagues,
-                            notificationsEnabled = preferences.notificationsEnabled,
-                            preferredLanguage = preferences.preferredLanguage,
-                            isOnboardingCompleted = preferences.isOnboardingCompleted,
-                            teamNotifications = preferences.teamNotifications
-                        )
+                    val selectedLeagues = preferences.selectedLeagueIds.mapNotNull { LeagueData.getLeagueById(it) }
+                    _uiState.value = SettingsUiState.Loaded(
+                        selectedLeagues = selectedLeagues,
+                        notificationsEnabled = preferences.notificationsEnabled,
+                        preferredLanguage = preferences.preferredLanguage,
+                        isOnboardingCompleted = preferences.isOnboardingCompleted,
+                        teamNotifications = preferences.teamNotifications
+                    )
                 }
             } catch (e: Exception) {
-                _uiState.value =
-                    SettingsUiState.Error(message = e.message ?: "Failed to load settings")
+                _uiState.value = SettingsUiState.Error(e.message ?: "تعذر تحميل الإعدادات")
             }
         }
     }
 
-    /** Add a league to user preferences */
     fun addLeague(league: League) {
         viewModelScope.launch {
-            try {
-                val currentPrefs = userPreferencesRepository.getPreferences().first()
-                val updatedLeagueIds = (currentPrefs.selectedLeagueIds + league.id).distinct()
-
-                userPreferencesRepository.savePreferences(
-                    currentPrefs.copy(selectedLeagueIds = updatedLeagueIds)
-                )
-            } catch (e: Exception) {
-                _uiState.value =
-                    SettingsUiState.Error(message = "Failed to add league: ${e.message}")
-            }
+            val current = userPreferencesRepository.getPreferences().first()
+            userPreferencesRepository.savePreferences(
+                current.copy(selectedLeagueIds = (current.selectedLeagueIds + league.id).distinct())
+            )
         }
     }
 
-    /** Remove a league from user preferences */
     fun removeLeague(league: League) {
         viewModelScope.launch {
-            try {
-                val currentPrefs = userPreferencesRepository.getPreferences().first()
-                val updatedLeagueIds = currentPrefs.selectedLeagueIds - league.id
-
-                userPreferencesRepository.savePreferences(
-                    currentPrefs.copy(selectedLeagueIds = updatedLeagueIds)
-                )
-            } catch (e: Exception) {
-                _uiState.value =
-                    SettingsUiState.Error(message = "Failed to remove league: ${e.message}")
-            }
+            val current = userPreferencesRepository.getPreferences().first()
+            userPreferencesRepository.savePreferences(
+                current.copy(selectedLeagueIds = current.selectedLeagueIds - league.id)
+            )
         }
     }
 
-    /** Toggle global notifications */
     fun toggleNotifications(enabled: Boolean) {
         viewModelScope.launch {
-            try {
-                val currentPrefs = userPreferencesRepository.getPreferences().first()
-                userPreferencesRepository.savePreferences(
-                    currentPrefs.copy(notificationsEnabled = enabled)
-                )
-            } catch (e: Exception) {
-                _uiState.value =
-                    SettingsUiState.Error(
-                        message = "Failed to update notifications: ${e.message}"
-                    )
-            }
+            val current = userPreferencesRepository.getPreferences().first()
+            userPreferencesRepository.savePreferences(current.copy(notificationsEnabled = enabled))
         }
     }
 
-    /** Toggle notifications for specific team */
     fun toggleTeamNotifications(teamId: Int, enabled: Boolean) {
         viewModelScope.launch {
-            try {
-                val currentPrefs = userPreferencesRepository.getPreferences().first()
-                val updatedTeamNotifications = currentPrefs.teamNotifications.toMutableMap()
-                updatedTeamNotifications[teamId] = enabled
-
-                userPreferencesRepository.savePreferences(
-                    currentPrefs.copy(teamNotifications = updatedTeamNotifications)
-                )
-            } catch (e: Exception) {
-                _uiState.value =
-                    SettingsUiState.Error(
-                        message = "Failed to update team notifications: ${e.message}"
-                    )
-            }
+            val current = userPreferencesRepository.getPreferences().first()
+            val updated = current.teamNotifications.toMutableMap().apply { put(teamId, enabled) }
+            userPreferencesRepository.savePreferences(current.copy(teamNotifications = updated))
         }
     }
 
-    /** Change preferred language */
     fun changeLanguage(languageCode: String) {
         viewModelScope.launch {
-            try {
-                val currentPrefs = userPreferencesRepository.getPreferences().first()
-                userPreferencesRepository.savePreferences(
-                    currentPrefs.copy(preferredLanguage = languageCode)
-                )
-            } catch (e: Exception) {
-                _uiState.value =
-                    SettingsUiState.Error(message = "Failed to change language: ${e.message}")
-            }
+            val current = userPreferencesRepository.getPreferences().first()
+            userPreferencesRepository.savePreferences(current.copy(preferredLanguage = languageCode))
         }
     }
 
-    /** Clear all user data and reset to onboarding */
     fun clearAllData() {
         viewModelScope.launch {
-            try {
-                userPreferencesRepository.clearAllPreferences()
-                _uiState.value = SettingsUiState.DataCleared
-            } catch (e: Exception) {
-                _uiState.value =
-                    SettingsUiState.Error(message = "Failed to clear data: ${e.message}")
-            }
+            userPreferencesRepository.clearAllPreferences()
+            _uiState.value = SettingsUiState.DataCleared
         }
     }
 
-    /** Retry loading settings after an error */
     fun retry() {
         _uiState.value = SettingsUiState.Loading
         observeUserPreferences()
     }
 }
 
-/** Represents the different states of the Settings screen */
 sealed class SettingsUiState {
-    /** Loading state while fetching preferences */
     object Loading : SettingsUiState()
 
-    /** Settings loaded successfully */
     data class Loaded(
         val selectedLeagues: List<League>,
         val notificationsEnabled: Boolean,
@@ -174,18 +110,11 @@ sealed class SettingsUiState {
         val teamNotifications: Map<Int, Boolean>
     ) : SettingsUiState()
 
-    /** Error state with retry capability */
     data class Error(val message: String) : SettingsUiState()
-
-    /** Data has been cleared, user needs to restart onboarding */
     object DataCleared : SettingsUiState()
 }
 
-/** Supported languages for the app */
 enum class SupportedLanguage(val code: String, val displayName: String) {
-    ENGLISH("en", "English"),
-    SPANISH("es", "Español"),
-    FRENCH("fr", "Français"),
-    GERMAN("de", "Deutsch"),
-    ITALIAN("it", "Italiano")
+    ARABIC("ar", "العربية"),
+    ENGLISH("en", "English")
 }
