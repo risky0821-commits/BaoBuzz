@@ -35,7 +35,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.msdc.baobuzz.core.navigation.BaoBuzzRoutes
-import com.msdc.baobuzz.features.home.HomeScreen
+import com.msdc.baobuzz.features.home.FotMobHomeScreen
 import com.msdc.baobuzz.features.leagues.LeaguesScreen
 import com.msdc.baobuzz.features.settings.SettingsScreen
 import com.msdc.baobuzz.features.stats.StatsScreen
@@ -52,43 +52,21 @@ fun MainAppScreen(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
-    val bottomNavItems =
-        listOf(
-            BottomNavItem(
-                route = BaoBuzzRoutes.HOME,
-                icon = Icons.Default.Home,
-                label = "Home"
-            ),
-            BottomNavItem(
-                route = BaoBuzzRoutes.LEAGUES,
-                icon = Icons.Filled.List,
-                label = "Leagues"
-            ),
-            BottomNavItem(
-                route = BaoBuzzRoutes.STATS,
-                icon = Icons.Default.Analytics,
-                label = "Stats"
-            ),
-            BottomNavItem(
-                route = BaoBuzzRoutes.SETTINGS,
-                icon = Icons.Default.Settings,
-                label = "Settings"
-            )
-        )
+    val bottomNavItems = listOf(
+        BottomNavItem(BaoBuzzRoutes.HOME, Icons.Default.Home, "المباريات"),
+        BottomNavItem(BaoBuzzRoutes.LEAGUES, Icons.Filled.List, "البطولات"),
+        BottomNavItem(BaoBuzzRoutes.STATS, Icons.Default.Analytics, "الإحصائيات"),
+        BottomNavItem(BaoBuzzRoutes.SETTINGS, Icons.Default.Settings, "الإعدادات")
+    )
 
     Scaffold(
         bottomBar = {
             NavigationBar {
                 bottomNavItems.forEach { item ->
                     NavigationBarItem(
-                        icon = {
-                            Icon(imageVector = item.icon, contentDescription = item.label)
-                        },
+                        icon = { Icon(imageVector = item.icon, contentDescription = item.label) },
                         label = { Text(item.label) },
-                        selected =
-                            currentDestination?.hierarchy?.any {
-                                it.route == item.route
-                            } == true,
+                        selected = currentDestination?.hierarchy?.any { it.route == item.route } == true,
                         onClick = {
                             navController.navigate(item.route) {
                                 popUpTo(BaoBuzzRoutes.HOME) { saveState = true }
@@ -107,30 +85,22 @@ fun MainAppScreen(
             modifier = Modifier.padding(paddingValues)
         ) {
             composable(BaoBuzzRoutes.HOME) {
-                HomeScreen(
+                FotMobHomeScreen(
                     onNavigateToOnboarding = {
                         navController.navigate(BaoBuzzRoutes.ONBOARDING) {
                             popUpTo(BaoBuzzRoutes.HOME) { inclusive = true }
                         }
                     },
-                    onNavigateToSettings = { navController.navigate(BaoBuzzRoutes.SETTINGS) },
-                    onNavigateToQuiz = onNavigateToQuiz,
-                    onNavigateToFacts = onNavigateToFacts,
-                    onNavigateToComparison = onNavigateToComparison
+                    onNavigateToSettings = { navController.navigate(BaoBuzzRoutes.SETTINGS) }
                 )
             }
 
             composable(BaoBuzzRoutes.LEAGUES) { LeaguesScreen(navController = navController) }
-
             composable(BaoBuzzRoutes.STATS) { StatsScreen() }
-
             composable(BaoBuzzRoutes.TRANSFERS) {
                 val teamId = it.arguments?.getString("teamId")?.toIntOrNull()
-                if (teamId != null) {
-                    TransfersScreen(teamId = teamId, navController = navController)
-                }
+                if (teamId != null) TransfersScreen(teamId = teamId, navController = navController)
             }
-
             composable(BaoBuzzRoutes.SETTINGS) {
                 SettingsScreen(
                     onNavigateToOnboarding = {
@@ -148,42 +118,21 @@ fun MainAppScreen(
 @Composable
 private fun PlaceholderScreen(title: String, description: String) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
+        modifier = Modifier.fillMaxSize().padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold)
-        )
-
+        Text(text = title, style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold))
         Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = description,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-        )
-
+        Text(text = description, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
         Spacer(modifier = Modifier.height(32.dp))
-
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors =
-                CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+            Column(modifier = Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(text = "🚧 Under Construction", style = MaterialTheme.typography.titleMedium)
-
                 Spacer(modifier = Modifier.height(8.dp))
-
                 Text(
                     text = "This screen will be implemented with modern Compose UI",
                     style = MaterialTheme.typography.bodyMedium,
